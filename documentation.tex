@@ -1,0 +1,365 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{textcomp}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{array}
+\usepackage{enumerate}
+\usepackage{amsmath} % Math aligning equation
+\usepackage{verbatim} % Command \verb
+\usepackage{titlesec} % Righe di separazione
+\usepackage{mathtools}
+\DeclarePairedDelimiter\ceil{\lceil}{\rceil}
+\DeclarePairedDelimiter\floor{\lfloor}{\rfloor}
+
+% Tabelle
+\usepackage{tabu}
+\usepackage{caption} 
+\captionsetup[table]{skip=2pt}
+
+% Impostazioni di pagina e margini
+\usepackage[a4paper, margin=2.54cm]{geometry}
+
+% Spacing nelle liste
+\usepackage{enumitem}
+\setlist{topsep=2pt, itemsep=2pt, partopsep=2pt, parsep=2pt}
+
+\newcommand\tab[1][1cm]{\hspace*{#1}}
+% Cambio di nome di contenuti Latex
+\renewcommand*\contentsname{Indice}
+\renewcommand{\figurename}{Figura}
+\renewcommand{\tablename}{Tabella}
+
+% Checkmarks
+\usepackage{pifont}
+\newcommand{\cmark}{\ding{51}} % V
+\newcommand{\xmark}{\ding{55}} % X
+
+% Header & Footer
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{Progetto finale di Reti Logiche - a.a. 2020/2021}
+\rhead{Piani Alessandro}
+\cfoot{\thepage}
+
+% Titolo e informazioni
+\title{Progetto finale di Reti Logiche}
+\author{Piani Alessandro - Matricola n. 910280}
+\date{Anno Accademico 2020/2021}
+
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+
+
+% INTRODUZIONE
+\pagebreak
+\section{Introduzione} \label{subsection-introduz}
+
+\subsection{Specifica del progetto}
+Lo scopo di questo progetto è implementare in linguaggio VHDL un componente hardware che consente di equalizzare una o più immagini in scala di grigi a 256 livelli, per mezzo del metodo di equalizzazione dell'istogramma. Questo metodo consiste nel trasformare ogni pixel di un'immagine al fine di ricalibrarne il contrasto quando l'intervallo dei valori di intensità sono molto vicini, effettuandone una distribuzione su tutto l'intervallo di intensità, in modo tale da incrementare il contrasto.
+
+\subsection{Interfaccia del componente}
+L'interfaccia del componente è così descritta:
+
+\begin{figure}[H]
+	\includegraphics[width=0.75\textwidth]{entity1.png}
+\end{figure}
+
+\noindent In particolare:\\
+\begin{itemize}
+	\item \verb^i_clk^ rappresenta il segnale di CLOCK in ingresso generato dal test bench;
+	\item \verb^i_rst^ è il segnale generato dal test bench che riporta la macchina nello stato di reset e che inizializza la macchina pronta per ricevere il primo segnale di START;
+	\item \verb^i_start^ è il segnale di inizio elaborazione generato dal test bench;
+	\item \verb^i_data^ rappresenta il segnale che arriva dalla memoria in seguito ad una richiesta di lettura;
+	\item \verb^o_address^ è il segnale di uscita che manda l’indirizzo (su cui si vuole scrivere o che si vuole leggere) alla memoria;
+	\item \verb^o_done^ è il segnale di uscita generato dal componente che comunica la fine dell’elaborazione e il dato di uscita scritto in memoria;
+	\item \verb^o_en^ è il segnale di ENABLE generato dal componente usato per poter comunicare con la memoria (sia in lettura sia in scrittura);
+	\item \verb^o_we^ è il segnale di WRITE ENABLE generato dal componente che viene inviato alla memoria per poterci scrivere. Per leggere da memoria esso deve essere 0;
+	\item \verb^o_data^ rappresenta il segnale di uscita dal componente verso la memoria.
+\end{itemize}
+
+\subsection{Dati e descrizione memoria}
+Per poter leggere l'immagine da elaborare ed in seguito scrivere l'immagine equalizzata, il componente deve interfacciarsi con una memoria dove è memorizzata l'immagine. Essa è salvata, sequenzialmente e riga per riga, in una memoria con indirizzamento al byte nel seguente modo: \\
+\begin{itemize}
+	\item Nelle prime due posizioni da 0 a 1 della memoria si salvano le dimensioni dell'immagine, ciascuna di dimensione di 8 bit: il byte in posizione 0 si riferisce al numero di colonne (N-COL), mentre il byte in posizione 1 si riferisce al numero di righe (N-RIG);
+	\item Dalla posizione 2 si salvano i pixel dell'immagine da elaborare, ciascuno di un 8 bit, in byte contigui. Quindi il byte
+all’indirizzo 2 è il primo pixel della prima riga dell’immagine;
+	\item Dalla posizione 2 + (N-COL $\cdot$ N-RIG) vengono memorizzati i pixel dell'immagine equalizzata, ciascuno di un 8 bit.
+\end{itemize}
+Occorre precisare che la dimensione massima dell'immagine è di $128\cdot128$ pixel.
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.7\textwidth]{pilaRAM-1a.jpg}
+	\caption{Rappresentazione della memoria}
+\end{figure}
+
+\subsection{Equalizzazione dell'immagine}
+L'immagine viene equalizzata tramite una versione semplificata dell'algoritmo standard di equalizzazione dell'istogramma, che deve trasformare ogni suo pixel come segue:\\ \\
+$DELTA\_VALUE = MAX\_PIXEL\_VALUE - MIN\_PIXEL\_VALUE$ \\
+$SHIFT\_LEVEL = \left(8 - \floor*{\log_{2}(DELTA\_VALUE + 1)}\right)$ \\
+$TEMP\_PIXEL = \left(CURRENT\_PIXEL\_VALUE - MIN\_PIXEL\_VALUE\right) << SHIFT\_LEVEL$ \\
+$NEW\_PIXEL\_VALUE = MIN\left( 255, TEMP\_PIXEL \right)$ \\ \\
+Dove $MAX\_PIXEL\_VALUE$ e $MIN\_PIXEL\_VALUE$ sono il massimo e il minimo valore dei pixel dell'immagine, $CURRENT\_PIXEL\_VALUE$ è il valore del pixel da elaborare e $NEW\_PIXEL\_VALUE$ è il valore del pixel trasformato che apparterrà all'immagine equalizzata.
+
+\subsubsection{Esempio}
+Si consideri il seguente stato della memoria contenente la sequenza dei pixel di un'immagine da equalizzare, di dimensione $4\cdot3$, prima dell'implementazione da parte del componente:
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.7\textwidth]{pilaRAM-Es.jpg}
+	\caption{Esempio del contenuto della memoria prima dell'elaborazione \textbf{(si precisa che i valori che qui sono rappresentati in decimale, sono memorizzati in memoria con l'equivalente codifica binaria su 8 bit senza segno)}}
+\end{figure}
+
+\noindent In questo caso, il massimo e il minimo valore dei pixel dell'immagine (ovvero $MAX\_PIXEL\_VALUE$ e $MIN\_PIXEL\_VALUE$) sono rispettivamente uguali a 131 e a 46. La differenza fra questi due valori permette di calcolare il valore di $DELTA\_VALUE$, che è pari a 85.\\
+L'operazione successiva consiste nel calcolo del valore di $SHIFT\_LEVEL$ che risulta 2 (dal momento che il $\floor*{\log_{2}(DELTA\_VALUE + 1)}$ è uguale a 6, da cui consegue l'espressione $8 - 6 = 2$).\\
+A questo punto dell'algoritmo, viene eseguita la vera e propria trasformazione dei pixel, che è descritta dal seguente processo:\\
+\begin{enumerate}
+	\item Inizialmente, partendo dall'indirizzo 2, viene letto da memoria il valore del pixel da elaborare (chiamato $CURRENT\_PIXEL\_VALUE$) ed ad esso viene sottratto il valore di $MIN\_PIXEL\_VALUE$;
+	\item Il risultato ottenuto dalla sottrazione precedente, viene "shiftato a sinistra" di un numero di livelli pari al valore di $SHIFT\_LEVEL$ e il valore risultante viene salvato in $TEMP\_PIXEL$. Occorre precisare che, in questo caso, l'operazione "shift a sinistra" di un numero equivale a moltiplicarlo per $2^{SHIFT\_LEVEL}$ in quanto i valori presenti in memoria sono codificati in binario su 8 bit senza segno;
+	\item Infine, il valore del pixel trasformato (cioè $NEW\_PIXEL\_VALUE$) è pari al minimo tra 255 e $TEMP\_PIXEL$, e viene scritto in memoria dal componente a partire dall'indirizzo \\ 2 + (N-COL $\cdot$ N-RIG).
+\end{enumerate}
+
+\noindent \\ Il processo appena descritto viene iterato per ogni pixel dell'immagine da equalizzare.\\
+Ritornando all'esempio, se consideriamo il primo pixel dell'immagine, cioè \\ $CURRENT\_PIXEL\_VALUE = 76$, si ha un valore di $TEMP\_PIXEL = (76 - 46) \cdot 2^{2} = 120$. Di conseguenza $NEW\_PIXEL\_VALUE = MIN\left( 255, 120 \right) = 120$, che corrisponde al pixel trasformato scritto in memoria all'indirizzo 14.\\
+Quindi, al termine dell'elaborazione dell'immagine, lo stato della memoria è il seguente:
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=0.7\textwidth]{pilaRAM-Es1.jpg}
+	\caption{Esempio del contenuto della memoria dopo l'elaborazione}
+\end{figure}
+
+\vspace{4mm}
+\titlerule[0.4pt]
+
+
+% ARCHITETTURA
+\pagebreak
+\section{Architettura} \label{subsection-arch}
+
+\subsection{Esecuzione della computazione}
+Il componente dà inizio alla computazione quando il test bench ad esso fornito pone il segnale \verb^i_start^ a 1; in questo istante il componente passa dallo stato \textbf{S\_reset} allo stato \textbf{S\_enable}. Una volta terminata l'elaborazione, dopo avere scritto il risultato in memoria, il componente alza ad 1 il segnale \verb^o_done^ e si posiziona nello stato \textbf{S\_done}. A questo punto, il test bench risponde ponendo a 0 il segnale \verb^i_start^ e stimolando il componente a resettare tutti i segnali dichiarati. Inoltre lo stimola a porre \verb^o_done^ a 0 e a riposizionarsi nello stato \textbf{S\_reset}, in attesa che il segnale \verb^i_start^ venga alzato ad 1 per ripartire con una nuova elaborazione.\\
+Il componente può inoltre ricevere in input un segnale \verb^i_rst^ che, se alzato ad 1, porta incondizionatamente il componente nello stato \textbf{S\_reset}.\\ \\
+Per rispettare il funzionamento descritto brevemente in precedenza, il componente è stato realizzato progettando una FSM(D), macchina a stati finiti deterministica di Moore con \textit{data path}, che combina una normale FSM di Moore con tipici circuiti sequenziali.\\
+Nelle seguenti sezioni si trovano sia la descrizione della FSM, sia la descrizione della parte sequenziale della macchina che gestisce i registri utilizzati e il calcolo dell'immagine equalizzata.
+
+\subsection{Macchina a Stati Finiti}
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=1.0\textwidth]{FSM.png}
+	\caption{Macchina a Stati Finiti implementata}
+	\label{fig:FSM}
+\end{figure}
+
+La macchina progettata è composta da 16 stati ed è rappresentata in figura \ref{fig:FSM}, mentre ciò che ogni stato rappresenta è spiegato in dettaglio di seguito:
+\begin{itemize}
+	\item \textbf{S\_reset}: stato iniziale in cui vengono settati ad un valore di default i segnali del componente e si attende la ricezione di un segnale \verb^i_start^ per iniziare la computazione. In caso venga alzato il segnale \verb^i_rst^ si torna sempre in questo stato.
+	\item \textbf{S\_enable}: stato in cui viene alzato il segnale \verb^o_en^ a 1 per poter comunicare con la memoria in lettura. Inoltre, viene fornito alla RAM l'indirizzo della cella che contiene il numero di colonne dell'immagine da equalizzare (esso si trova sempre nella cella di memoria di indice 0).
+	\item \textbf{S\_col}: stato in cui il componente legge e salva in un registro (\textit{col\_reg}) il numero di colonne dell'immagine che gli è arrivato da memoria. Parallelamente, salva in un registro (\textit{addrRead\_reg}) l'indirizzo della cella di memoria che contiene il primo pixel da trasformare.
+	\item \textbf{S\_addrRow}: stato in cui viene fornito alla RAM l'indirizzo della cella contenente il numero di righe dell'immagine da equalizzare (esso si trova sempre nella cella di memoria di indice 1).
+	\item \textbf{S\_row}: stato in cui il componente legge e salva in un registro (\textit{row\_reg}) il numero di righe dell'immagine che gli è arrivato da memoria.
+	\item \textbf{S\_addrPix}: stato in cui il componente salva in un registro (\textit{addrWrite\_reg}) l'indirizzo della cella di memoria in cui sarà scritto il primo pixel equalizzato e, in contemporanea, controlla la dimensione dell'immagine, cioè il prodotto tra il numero di colonne e il numero di righe. Se essa è nulla, viene alzato ad 1 il segnale \verb^o_zero^ perché non ci sono pixel da convertire, quindi la computazione deve terminare e, di conseguenza, si va nello stato \textbf{S\_done}. Diversamente, se non è nulla, il segnale \verb^o_zero^ rimane a 0 e si procede con la conversione dei pixel, quindi viene fornito alla RAM l'indirizzo della cella contenente il pixel dell'immagine da equalizzare e si passa allo stato \textbf{S\_readPix}.
+	\item \textbf{S\_readPix}: stato in cui il componente legge e salva in un registro (\textit{currentPix\_reg}) il pixel dell'immagine che gli è arrivato da memoria. In aggiunta, aggiorna il registro \textit{addrRead\_reg} memorizzando al suo interno l'indirizzo della cella di memoria che contiene il pixel successivo da trasformare.
+	\item \textbf{S\_nextPix}: stato in cui il componente effettua opportuni controlli per determinare e salvare in 2 registri dedicati il massimo e il minimo valore dei pixel dell'immagine da elaborare, confrontando progressivamente tra di loro il pixel letto nello stato precedente (il pixel corrente) con il valore del pixel temporaneamente massimo e con il valore del pixel temporaneamente minimo (memorizzati temporaneamente rispettivamente nel registro dedicato al massimo, \textit{maxPix\_reg}, e in quello dedicato al minimo, \textit{minPix\_reg}). In contemporanea, il componente verifica se ci sono successivi pixel dell'immagine da leggere (rispetto al pixel corrente), cioè viene confrontato l'indirizzo di memoria contenuto nel registro \textit{addrRead\_reg} con quello contenuto nel registro \textit{addrWrite\_reg}. Se i due indirizzi sono diversi, significa che ci sono ulteriori pixel dell'immagine da leggere, quindi il segnale \verb^o_end0^ rimane a 0, e si ritorna allo stato \textbf{S\_addrPix}. Se, invece, i due indirizzi sono uguali, significa che sono stati letti tutti i pixel dell'immagine da equalizzare: viene alzato ad 1 il segnale \verb^o_end0^, poichè termina la procedura di individuazione e memorizzazione del massimo e del minimo valore dei pixel dell'immagine, e si passa allo stato \textbf{S\_delta}.
+	\item \textbf{S\_delta}: stato in cui viene fornito alla RAM l'indirizzo della cella di memoria contenente il primo pixel dell'immagine da equalizzare e, in aggiunta, aggiorna il registro \textit{addrRead\_reg} memorizzando al suo interno lo stesso indirizzo. In parallelo, il componente calcola e salva in un registro (\textit{delta\_reg}) il valore di $DELTA\_VALUE$.
+	\item \textbf{S\_pixToConv}: stato in cui il componente legge e salva nel registro \textit{currentPix\_reg} il pixel dell'immagine che gli è arrivato da memoria. In contemporanea, calcola il valore di $SHIFT\_LEVEL$ attraverso un algoritmo ad hoc.
+	\item \textbf{S\_sub}: stato in cui il componente calcola la differenza tra il valore del pixel corrente (letto nello stato precedente) e quello del minimo pixel dell'immagine (contenuto nel registro \textit{minPix\_reg}). Il risultato viene memorizzato in un registro (\textit{sub\_reg}).
+	\item \textbf{S\_write}: stato in cui il componente calcola il valore di $TEMP\_PIXEL$ e, in seguito, quello di $NEW\_PIXEL\_VALUE$ (cioè il pixel equalizzato), che corrisponde al minimo tra 255 e $TEMP\_PIXEL$. Inoltre, alza il segnale \verb^o_we^ a 1 (per poter comunicare in scrittura con la memoria) e scrive il valore del pixel equalizzato nella RAM all'indirizzo di memoria pari a quello contenuto nel registro \textit{addrWrite\_reg}. In più, aggiorna il registro \textit{addrRead\_reg} memorizzando al suo interno l'indirizzo della cella di memoria che contiene il pixel successivo da trasformare. Infine, il componente verifica se ci sono successivi pixel dell'immagine da trasformare (rispetto al pixel corrente), cioè viene confrontato l'indirizzo della cella di memoria contenuto nel registro \textit{addrWrite\_reg} con quello che conterrà l'ultimo pixel dell'immagine equalizzata (segnale \verb^addrEnd^). Se i due indirizzi sono diversi, significa che ci sono ulteriori pixel dell'immagine da trasformare, quindi il segnale \verb^o_end1^ rimane a 0 e si passa allo stato \textbf{S\_nextPixWrite}. Se, invece, i due indirizzi sono uguali, significa che sono stati trasformati e scritti in memoria tutti i pixel dell'immagine da equalizzare. Di conseguenza, viene alzato ad 1 il segnale \verb^o_end1^ perché termina la procedura di equalizzazione dell'immagine, viene posto ad 1 il segnale \verb^o_done^ e si passa allo stato \textbf{S\_done}.
+	\item \textbf{S\_nextPixWrite}: stato in cui viene abbassato il segnale \verb^o_we^ a 0 per poter comunicare in lettura con la memoria. In parallelo, il componente aggiorna il registro \textit{addrWrite\_reg} memorizzando al suo interno l'indirizzo della cella di memoria in cui sarà scritto il prossimo pixel equalizzato.
+	\item \textbf{S\_addrPixConv}: stato in cui viene fornito alla RAM l'indirizzo della cella di memoria contenente il pixel dell'immagine da equalizzare.
+	\item \textbf{S\_nextPixConv}: stato in cui il componente legge e salva nel registro \textit{currentPix\_reg} il pixel dell'immagine che gli è arrivato da memoria.
+	\item \textbf{S\_done}: stato in cui il componente attende che il segnale \verb^i_start^ venga abbassato a 0, per poter abbassare a sua volta il segnale \verb^o_done^ a 0 e tornare nello stato \textbf{S\_reset}.
+\end{itemize}
+
+\subsection{Schema funzionale}
+\subsubsection{Registri}
+Come si può vedere dallo schema funzionale in figura \ref{fig:Schema}, il \textit{data path} sviluppato è composto da 9 registri che hanno lo scopo di salvare il valore di alcuni importanti segnali:
+\begin{itemize}
+	\item \textbf{col\_reg}: il numero di colonne dell'immagine;
+	\item \textbf{row\_reg}: il numero di righe dell'immagine;
+	\item \textbf{currentPix\_reg}: il pixel corrente dell'immagine da equalizzare;
+	\item \textbf{maxPix\_reg}: il massimo pixel dell'immagine;
+	\item \textbf{minPix\_reg}: il minimo pixel dell'immagine;
+	\item \textbf{delta\_reg}: $DELTA\_VALUE$;
+	\item \textbf{sub\_reg}: la differenza tra il valore del pixel corrente e il valore del minimo pixel dell'immagine;
+	\item \textbf{addrWrite\_reg}: l'indirizzo della cella di memoria in cui viene scritto il pixel trasformato;
+	\item \textbf{addrRead\_reg}: l'indirizzo della cella di memoria da cui viene letto il pixel da trasformare.
+\end{itemize}
+\vspace{0.1cm}
+\noindent N.B.: Si è adottata la convenzione che i segnali \verb^o_reg*^ rappresentano le uscite dei registri.
+
+\subsubsection{Funzionalità in dettaglio}
+Si prosegue ora con la descrizione del funzionamento dei 2 process presenti nel \textit{data path}: \vspace{0.2cm}
+\begin{enumerate}
+	\item Process per il calcolo del valore del segnale $SHIFT\_LEVEL$: calcola un numero intero con valori tra 0 e 8, ricavato da controlli a soglia. Precisamente, controlla il valore di $DELTA\_VALUE$ (con opportuni if statement) e ricava il corrispondente valore di $SHIFT\_LEVEL$ (si veda tabella in figura \ref{fig:Tabella}).
+	\item Process per il calcolo del valore del segnale $TEMP\_PIXEL$: calcola il valore temporaneo del pixel equalizzato, ricavato applicando l'operazione "shift a sinistra" (funzione \textbf{shift\_left()}) di un numero di livelli pari a $SHIFT\_LEVEL$ sul segnale \verb^o_reg7^.
+\end{enumerate}
+
+\begin{figure} [H]
+	\centering
+	\caption{Tabella calcolo SHIFT\_LEVEL}
+	\includegraphics[width=1.0\textwidth]{tabella-1.jpg}
+	\label{fig:Tabella}
+\end{figure}
+
+\begin{figure}[H]
+	\centering
+	\caption{Schema funzionale della parte sequenziale del componente}
+	\includegraphics[width=0.98\textwidth]{schema_funzionale.png}
+	\label{fig:Schema}
+\end{figure}
+
+\subsection{Scelte progettuali}
+La principale scelta progettuale effettuata è stata quella di descrivere il componente con due moduli (entity): \\
+\begin{enumerate}
+	\item Il primo rappresenta la parte sequenziale della macchina (\textit{data path}), che serve per gestire i registri implementati e per eseguire le operazioni per calcolare i pixel dell'immagine equalizzata.
+	\item Il secondo rappresenta, invece, la FSM che pilota il \textit{data path}, e che analizza i segnali in ingresso ed uscita e lo stato corrente per determinare il prossimo stato in cui evolverà il sistema.
+\end{enumerate}
+
+\noindent \\Inoltre, per limitare al minimo indispensabile il tempo di lettura di un pixel dalla memoria RAM, è stato scelto di utilizzare il registro \textbf{currentPix\_reg} per memorizzare il pixel letto, affinchè venga utilizzato direttamente il valore salvato nel registro per le operazioni successive senza doverlo nuovamente leggere dalla RAM. Per quanto riguarda tutti gli altri registri, essi sono stati implementati così da accorciare i path del \textit{data path}. Queste decisioni hanno permesso di ottimizzare il tempo di elaborazione del componente e, di conseguenza, di poter funzionare con un periodo di clock più stretto. \\
+Infine, per scrivere un codice semplice e di facile manutenzione si è optato di usare il meno possibile funzionalità algoritmiche (process), così da non utilizzare il linguaggio VHDL come se fosse un linguaggio di programmazione software. \\
+
+\vspace{4mm}
+\titlerule[0.4pt]
+
+
+% RISULTATI SPERIMENTALI
+\pagebreak
+\section{Risultati sperimentali} \label{subsection-ris_sper}
+
+\subsection{Sintesi}
+\subsubsection{Registri sintetizzati}
+Analizzando il "Vivado Synthesis Report" si nota che sono stati sintetizzati i registri come descritto nel codice. Viene quindi riportata la creazione di 9 registri (per un totale di 92 Flip Flop a singolo bit utilizzati):
+\vspace{0.1cm}
+\setlength\intextsep{5pt}
+\begin{table}[H]
+	\centering
+	\caption{Registri sintetizzati}
+	\begin{tabu*} to 1.0\textwidth {| X[0.6c] | X[0.8c] | X[3.0l] |}
+		\hline
+		\textbf{Num. bit} & \textbf{Num. registri} & \textbf{Contenuto} \\
+		\hline
+		\rule[2ex]{0pt}{0.5ex} 8 & 7 & Numero di colonne dell'immagine; Numero di righe dell'immagine; Pixel corrente dell'immagine; Massimo pixel; Minimo pixel; Delta\_value; Differenza tra il pixel corrente e il minimo pixel dell'immagine. \rule[-1.0ex]{0pt}{1.0ex} \\
+		\hline
+		\rule[2ex]{0pt}{0.5ex} 16 & 2 & Indirizzo della cella di memoria in cui viene scritto il pixel trasformato; Indirizzo della cella di memoria da cui viene letto il pixel da trasformare. \rule[-1.0ex]{0pt}{1.0ex} \\
+		\hline
+		\rule[2ex]{0pt}{0.5ex} 4 & 1 & Stato della FSM. Usa 4 bit dato che si hanno 16 (\(2^4\)) stati. \rule[-1.0ex]{0pt}{1.0ex} \\
+		\hline
+	\end{tabu*}
+\end{table}
+
+\subsubsection{Area occupata}
+Eseguendo un "Report Utilization", si vede ora l'area occupata dal design sintetizzato.
+
+\begin{table}[H]
+	\centering
+	\caption{Report di utilizzo}
+	\begin{tabu*} to 1.0\textwidth {| X[1.0] | X[1.0] | X[1.0] | X[1.0] |}
+		\hline
+		\textbf{Risorsa} & \textbf{Utilizzo} & \textbf{Disponibilità} & \textbf{Utilizzo in \%} \\
+		\hline
+		Look Up Table & 234 & 134600 & 0.17\% \\
+		\hline
+		Flip Flop & 92 & 269200 & 0.03\% \\
+		\hline
+	\end{tabu*}
+	\label{tab:utilization-report}
+\end{table}
+\noindent Si noti che i valori di utilizzo hanno svariati ordini di grandezza in meno rispetto alla disponibilità della FPGA (è stata utilizzata, come suggerito dalla specifica, la FPGA xc7a200tfbg484-1).
+
+\subsubsection{Report di timing}
+Analizzando il report di timing si può vedere quanto il design sintetizzato sia veloce in un singolo ciclo di clock. Con il clock della specifica di $100ns$ si è ottenuto uno Slack pari a $90.683ns$. Da questo valore, possiamo calcolare il minimo periodo di clock applicabile al componente creato: \\
+$T_{min} = T_{curr} - \mathit{Slack} = 100ns - 90.683ns = 9.317ns$ \\ \\
+Quindi, il design creato ha una massima frequenza di clock pari a: $f_{max} = 1/T_{min} \approx 107.3 \mathit{MHz}$.
+
+\begin{figure}[H]
+	\centering
+	\includegraphics[width=1.0\textwidth]{timing_report.png}
+	\caption{Report di timing}
+	\label{fig:TimingReport}
+\end{figure}
+
+\subsubsection{Warnings post synthesis}
+Tutti i warning generati dal tool di sintesi sono stati risolti durante lo sviluppo. Tra questi, figurano anche i warning più "comuni" come quelli per latch inferiti e per segnali presenti nel processo ma non inseriti nella sensitivity list. Pertanto, non è presente alcun warning nella versione finale del componente.
+
+\subsection{Simulazioni}
+Per verificare il corretto funzionamento del componente sintetizzato, dopo averlo testato con il test bench fornito come esempio, sono stati definiti altri test (tra i quali anche quelli che spingono la simulazione verso i corner case) in modo da cercare di massimizzare la copertura di tutti i possibili cammini che la macchina può attraversare durante la computazione. \\
+Di seguito, è fornita una breve descrizione dei test eseguiti e, per quelli più significativi, viene anche mostrato l'effettivo corretto funzionamento grazie allo \textit{screenshot} dell'andamento dei segnali durante la simulazione. \\ \\
+I test bench per la verifica dei corner case sono:
+\vspace{0.2cm}
+\begin{enumerate}
+	\item \textbf{Immagine di dimensione nulla} ($0\cdot0$ pixel, $1\cdot0$ pixel, $0\cdot1$ pixel, ...): l'immagine da equalizzare non ha pixel, cioè non esiste. Il test verifica che il componente alzi ad 1 il segnale \verb^o_zero^ (poichè il prodotto tra il numero di colonne e quello delle righe dell'immagine è nullo) e passi direttamente allo stato \textbf{S\_done} per terminare la computazione, senza eseguire l'equalizzazione.
+	\vspace{0.1cm}
+	\begin{figure}[H]
+		\centering
+		\includegraphics[width=1.0\textwidth]{tb_0x0.png}
+		\caption{Simulazione con immagine $0\cdot1$ pixel}
+		\label{fig:TB0x0}
+	\end{figure}
+
+	\item \textbf{Immagine di dimensione massima} ($128\cdot128$ pixel): l'immagine da equalizzare ha dimensione $128\cdot128$ pixel. Il test verifica che il componente esegua correttamente sia l'equalizzazione, sia la scrittura di ogni pixel dell'immagine nella memoria RAM.
+	\vspace{0.1cm}
+	\begin{figure}[H]
+		\centering
+		\includegraphics[width=1.0\textwidth]{tb_128x128.png}
+		\caption{Simulazione con immagine $128\cdot128$ pixel (si riporta solo una parte della simulazione perché troppo lunga da mostrare per intero)}
+		\label{fig:TB128x128}
+	\end{figure}
+\end{enumerate}
+
+\noindent I test bench che controllano il corretto funzionamento dei segnali sono:
+\vspace{0.2cm}
+\begin{enumerate}
+	\item \textbf{Equalizzazione immagine con Reset Asincrono}: il test verifica che il trigger asincrono del segnale di reset (\verb^i_rst^) non comprometta la computazione e che questa ricominci dallo stato iniziale della macchina \textbf{S\_reset}.
+	\vspace{0.1cm}
+	\begin{figure}[H]
+		\centering
+		\includegraphics[width=1.0\textwidth]{tb_5x3reset.png}
+		\caption{Simulazione con immagine $5\cdot3$ pixel con \textbf{i\_rst} triggerato in modo asincrono durante la computazione}
+		\label{fig:TBReset}
+	\end{figure}
+	
+	\item \textbf{Equalizzazione di più immagini in sequenza}: il test verifica la corretta sincronizzazione dei segnali \verb^i_start^, \verb^i_rst^ e \verb^o_done^ nel caso di codifica di più immagini di fila.
+	\vspace{0.1cm}
+	\begin{figure}[H]
+		\centering
+		\includegraphics[width=1.0\textwidth]{tb_3imm.png}
+		\caption{Simulazione con 3 immagini in sequenza di dimensione $2\cdot2$ pixel}
+		\label{fig:TB3imm}
+	\end{figure}
+\end{enumerate}
+
+\noindent \\ Inoltre, sono stati creati altri test bench per verificare alcuni casi limite e per controllare la robustezza del componente. Non vengono descritti in dettaglio siccome seguono tutti essenzialmente lo stesso principio di esecuzione. \\
+Si precisa che i test bench sviluppati sono stati testati correttamente anche con un periodo di clock inferiore al minimo richiesto dalla specifica (ad es.: 10ns).
+\vspace{0.2cm}
+\begin{itemize}
+	\item 3 test bench in cui l'immagine da equalizzare ha dimensione nulla ($2\cdot0$ pixel, $0\cdot0$ pixel e $1\cdot0$ pixel).
+	\item 2 test bench in cui si hanno 3 immagini in sequenza da equalizzare, di dimensione rispettivamente $128\cdot128$ pixel, $2\cdot0$ pixel e $80\cdot83$ pixel. Il primo test controlla il corretto funzionamento del componente nel caso di assenza di segnali di reset asincrono; il secondo esegue lo stesso controllo ma nel caso in cui, durante l'elaborazione, viene mandato un segnale di reset asincrono.
+	\item 2 test bench in cui si hanno 2000 immagini in sequenza da equalizzare, di dimensione casuale con limite massimo $128\cdot128$ pixel. Il primo test controlla il corretto funzionamento del componente nel caso di assenza di segnali di reset asincrono; il secondo esegue lo stesso controllo ma nel caso in cui, durante l'elaborazione, viene mandato un segnale di reset asincrono.
+	\item 2 test bench in cui si hanno 10000 immagini in sequenza da equalizzare, di dimensione casuale con limite massimo $16\cdot16$ pixel. Il primo test controlla il corretto funzionamento del componente nel caso di assenza di segnali di reset asincrono; il secondo esegue lo stesso controllo ma nel caso in cui, durante l'elaborazione, viene mandato un segnale di reset asincrono.
+	\item Infine, sono stati definiti una decina di altri test che non verificano casi particolari, ma semplicemente casi normali con immagini di dimensione e valore dei pixel diversi (tra cui anche le 5 immagini di dimensione $4\cdot3$ pixel presenti come esempio nella specifica).
+\end{itemize}
+
+\vspace{4mm}
+\titlerule[0.4pt]
+
+
+% CONCLUSIONI
+\section{Conclusioni}
+Per concludere, si è creato un design con le seguenti caratteristiche:
+\vspace{0.2cm}
+\begin{itemize}
+	\item Funzionante in pre e post-sintesi (\textit{Behavioral} e \textit{Post-Synthesis Functional}).
+	\item Ottimizzato così da ottenere un \textit{Data path delay} minore possibile, il minimo periodo di clock più stretto ed una frequenza massima di clock maggiore. Ciò è stato possibile mantenendo, rispettivamente, i registri \textbf{delta\_reg} e \textbf{sub\_reg} e lo stato \textbf{S\_enable} della FSM. Al contrario, eliminandoli, il \textit{Data path delay} sarebbe stato maggiore, il periodo di clock più largo, la frequenza di clock minore e il numero di LUT maggiore. Così facendo il progetto funzionerebbe comunque, ma avrebbe caratteristiche in parte differenti.
+	\item Una frequenza massima di clock impostabile a $107.3 \mathit{MHz}$.
+	\item Un utilizzo di LUT pari al 0.17\%.
+	\item Un utilizzo di FF pari al 0.03\%.
+\end{itemize}
+
+\end{document}
